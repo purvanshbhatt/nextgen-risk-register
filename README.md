@@ -15,9 +15,12 @@ Built for an AI-first cloud SaaS company (the demo tenant is "Lumen Analytics"),
 ## Quick start
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 python run.py
 ```
+
+On Debian, Kali or Ubuntu a bare `pip install` is refused (PEP 668 "externally-managed-environment"); the virtual environment above is the fix. Windows: `.venv\Scripts\activate`.
 
 Open <http://127.0.0.1:8000>. The first run seeds the Lumen Analytics demo dataset (12 risks, 20 controls, treatments, KRIs, one expired acceptance). Interactive API docs are at <http://127.0.0.1:8000/docs>.
 
