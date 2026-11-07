@@ -54,14 +54,15 @@ const numOrNull = (v) => (v === '' || v === undefined || v === null ? null : Num
 // ------------------------------------------------------------------ canvas charts
 function drawExceedance(canvas, series) {
   // series: [{label, color, curve:[{loss, probability_exceeding}]}]
+  canvas.style.width = '100%'; canvas.style.height = '220px';
   const ctx = canvas.getContext('2d'); const W = canvas.width = canvas.clientWidth * 2; const H = canvas.height = 220 * 2; ctx.scale(2, 2);
   const w = W / 2, h = H / 2, pad = { l: 46, r: 12, t: 12, b: 34 };
   const maxLoss = Math.max(1, ...series.flatMap((s) => s.curve.map((p) => p.loss)));
   const x = (loss) => pad.l + (loss / maxLoss) * (w - pad.l - pad.r);
   const y = (p) => pad.t + (1 - p) * (h - pad.t - pad.b);
   ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--line'); ctx.lineWidth = 1; ctx.font = '11px sans-serif';
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--muted');
+  ctx.strokeStyle = cssVar('--line'); ctx.lineWidth = 1; ctx.font = '11px "JetBrains Mono", monospace';
+  ctx.fillStyle = cssVar('--text-3');
   for (let i = 0; i <= 4; i++) { const p = i / 4; ctx.beginPath(); ctx.moveTo(pad.l, y(p)); ctx.lineTo(w - pad.r, y(p)); ctx.stroke(); ctx.fillText(pct(p), 6, y(p) + 4); }
   for (let i = 0; i <= 4; i++) { const l = (maxLoss * i) / 4; ctx.fillText(money(l), x(l) - 14, h - pad.b + 16); }
   ctx.fillText('Probability that annual loss exceeds X', pad.l, h - 4);
@@ -72,7 +73,7 @@ function drawExceedance(canvas, series) {
     ctx.stroke();
   });
   let lx = pad.l + 8;
-  series.forEach((s) => { ctx.fillStyle = s.color; ctx.fillRect(lx, pad.t + 2, 12, 4); ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text'); ctx.fillText(s.label, lx + 16, pad.t + 8); lx += 16 + ctx.measureText(s.label).width + 14; });
+  series.forEach((s) => { ctx.fillStyle = s.color; ctx.fillRect(lx, pad.t + 2, 12, 4); ctx.fillStyle = cssVar('--text'); ctx.fillText(s.label, lx + 16, pad.t + 8); lx += 16 + ctx.measureText(s.label).width + 14; });
 }
 
 function sparkline(readings, warning, critical, direction) {
@@ -110,8 +111,22 @@ async function boot() {
   $('#personaSelect').value = S.persona;
   $('#personaSelect').addEventListener('change', async (e) => { S.persona = e.target.value; localStorage.setItem('ngrr.persona', S.persona); await refreshMe(); route(); });
   await refreshMe();
+  initTheme();
   window.addEventListener('hashchange', route);
   route();
+}
+
+function initTheme() {
+  const btn = $('#themeBtn'); if (!btn) return;
+  const isDark = () => (document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')) === 'dark';
+  const paint = () => { btn.innerHTML = `<i class="ph ph-${isDark() ? 'sun' : 'moon'}"></i>`; };
+  btn.addEventListener('click', () => {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('ngrr.theme', next); } catch (_) { /* ignore */ }
+    paint(); route();
+  });
+  paint();
 }
 
 async function refreshMe() {
@@ -132,46 +147,137 @@ function route() {
 }
 
 // ------------------------------------------------------------------ dashboard
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const icon = (name) => `<i class="ph ph-${name}" aria-hidden="true"></i>`;
+const TONE_ICON = { bad: 'warning-octagon', warn: 'warning', good: 'check-circle', info: 'info' };
+
+function postureRing(inside, outside) {
+  const total = Math.max(1, inside + outside); const r = 34, c = 2 * Math.PI * r;
+  const bad = (outside / total) * c;
+  return `<svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label="${inside} inside appetite, ${outside} outside">
+    <circle cx="44" cy="44" r="${r}" fill="none" stroke="var(--s3)" stroke-width="10"/>
+    <circle cx="44" cy="44" r="${r}" fill="none" stroke="var(--ok)" stroke-width="10" stroke-dasharray="${(c - bad).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 44 44)"/>
+    <circle cx="44" cy="44" r="${r}" fill="none" stroke="var(--bad)" stroke-width="10" stroke-dasharray="${bad.toFixed(1)} ${c.toFixed(1)}" stroke-dashoffset="${(-(c - bad)).toFixed(1)}" transform="rotate(-90 44 44)"/>
+    <text x="44" y="41" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="20" font-weight="600" fill="var(--text)">${outside}</text>
+    <text x="44" y="56" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-size="10" fill="var(--text-3)">outside</text>
+  </svg>`;
+}
+
 async function viewDashboard() {
-  const d = await api('/dashboard');
-  const c = d.counts; const p = persona();
-  const kpi = (n, l, tone = '') => `<div class="card kpi ${tone}"><span class="n">${n}</span><span class="l">${l}</span></div>`;
-  const tiers = c.evidence_tiers;
-  const rows = d.top_risks.map((r) => `<tr class="clickable" onclick="location.hash='#/risk/${r.id}'"><td class="nowrap">${r.id}</td><td><b>${esc(r.title)}</b>${p.technical ? '' : `<div class="small muted">${esc(r.business_impact.slice(0, 120))}${r.business_impact.length > 120 ? '…' : ''}</div>`}</td><td>${esc(r.owner)}</td><td>${r.residual_score} ${chip(r.residual_band)}</td><td class="nowrap">${money(r.ale_p90)}</td><td>${r.appetite.breach ? '<span class="chip bad">Outside</span>' : '<span class="chip ok">Inside</span>'}</td></tr>`).join('');
+  const [d, av] = await Promise.all([api('/dashboard'), api('/audit/verify').catch(() => null)]);
+  const c = d.counts; const p = persona(); const tiers = c.evidence_tiers;
+  const bands = ['Low', 'Medium', 'High', 'Critical'].map((b) => [b, c.bands[b] || 0]);
+  const open = c.open || 0;
+  const critHigh = (c.bands.Critical || 0) + (c.bands.High || 0);
+  const lateCount = c.overdue_treatments + c.overdue_reviews;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const statTile = (value, cap, sub, tone, ic, extra = '') => `<div class="tile stat-tile ${tone} c3">
+      <div class="tile-head"><span class="cap">${cap}</span>${icon(ic)}</div>
+      <div class="big">${value}</div>
+      <div class="sub">${sub}</div>${extra}</div>`;
+
+  const bandBar = `<div class="bandbar">${bands.map(([b, n]) => n ? `<i class="${b}" style="flex:${n}" title="${b}: ${n}"></i>` : '').join('')}</div>
+    <div class="bandkey">${bands.map(([b, n]) => `<span><span class="dot ${b}"></span>${b} <span class="num">${n}</span></span>`).join('')}</div>`;
+
+  const cats = Object.entries(c.by_category || {}).sort((a, b) => b[1].max_score - a[1].max_score).slice(0, 7);
+  const catRows = cats.map(([name, v]) => {
+    const band = S.meta.bands.find((b) => v.max_score >= b.min && v.max_score <= b.max);
+    return `<div class="row"><span class="name" title="${esc(name)}">${esc(name)}${v.breaches ? ` <span class="chip bad">${v.breaches} outside</span>` : ''}</span>
+      <span class="bar"><i style="width:${(v.max_score / 25) * 100}%;background:var(--${(band ? band.name : 'low').toLowerCase()})"></i></span>
+      <span class="num">${v.max_score}</span></div>`;
+  }).join('');
+
+  const rows = d.top_risks.map((r) => `<tr class="clickable" onclick="location.hash='#/risk/${r.id}'">
+      <td class="num nowrap muted">${r.id}</td>
+      <td><b>${esc(r.title)}</b>${p.technical ? '' : `<div class="small muted">${esc(r.business_impact.slice(0, 110))}${r.business_impact.length > 110 ? '…' : ''}</div>`}</td>
+      <td class="nowrap">${esc(r.owner)}</td>
+      <td><span class="score"><i class="${esc(r.residual_band)}"></i>${r.residual_score}</span> ${chip(r.residual_band)}</td>
+      <td class="num nowrap right">${money(r.ale_p90)}</td>
+      <td>${r.appetite.breach ? `<span class="chip bad">${icon('arrow-up-right')} outside</span>` : `<span class="chip ok">${icon('check')} inside</span>`}</td></tr>`).join('');
+
+  const feed = d.headlines.map((h, i) => `<li class="${h.tone}">${icon(TONE_ICON[h.tone] || 'info')}<span><span class="idx">${String(i + 1).padStart(2, '0')}</span> &nbsp;${esc(h.text)}</span></li>`).join('');
+
+  const treat = d.overdue_treatments.length ? d.overdue_treatments.map((t) => `<div class="item"><span><a href="#/risk/${t.risk_id}">${esc(t.title)}</a><div class="sub">${esc(t.owner)} · due ${date(t.due_date)}</div></span><span class="num">${t.progress}%</span></div>`).join('')
+    : `<div class="empty">${icon('check-circle')}No treatment actions are past due</div>`;
+  const kris = d.kri_alerts.length ? d.kri_alerts.map((k) => `<div class="item"><span><a href="#/risk/${k.risk_id}">${esc(k.name)}</a><div class="sub num">${k.current_value} ${esc(k.unit)} · warn ${k.warning} · crit ${k.critical}</div></span><span>${sparkline(k.readings, k.warning, k.critical, k.direction)} <span class="chip ${k.status === 'Critical' ? 'bad' : 'warn'}">${k.status}</span></span></div>`).join('')
+    : `<div class="empty">${icon('check-circle')}All indicators are inside their thresholds</div>`;
+  const reviews = [
+    ...d.overdue_reviews.map((r) => `<div class="item"><span><a href="#/risk/${r.id}">${esc(r.title.slice(0, 60))}</a><div class="sub">review was due ${date(r.next_review_at)}</div></span><span class="chip warn">${icon('clock-counter-clockwise')} overdue</span></div>`),
+    ...d.acceptances.map((a) => `<div class="item"><span><a href="#/risk/${a.risk_id}">${esc(a.risk_title.slice(0, 60))}</a><div class="sub">accepted by ${esc(a.accepted_by)} until ${date(a.expires_at)}</div></span><span class="chip ${a.expired ? 'bad' : 'info'}">${a.expired ? 'expired' : 'accepted'}</span></div>`),
+  ].join('') || `<div class="empty">${icon('check-circle')}Reviews on schedule, no acceptances expiring</div>`;
+
+  const pf = d.portfolio;
   $('#view').innerHTML = `
-    <div class="toolbar"><h1 style="margin:0">Risk posture</h1><span class="muted small">${esc(p.blurb)}</span></div>
-    <div class="grid g4" style="margin-bottom:16px">
-      ${kpi(c.breaches, 'risks outside appetite', c.breaches ? 'bad' : 'ok')}
-      ${kpi((c.bands.Critical || 0) + (c.bands.High || 0), 'critical + high residual risks', (c.bands.Critical || 0) ? 'bad' : 'warn')}
-      ${kpi(d.portfolio ? money(d.portfolio.residual.ale_p90) : '–', 'annual loss in a bad year (P90)', '')}
-      ${kpi(c.overdue_treatments + c.overdue_reviews, 'overdue actions + stale reviews', (c.overdue_treatments + c.overdue_reviews) ? 'warn' : 'ok')}
+    <div class="hero">
+      <div>
+        <div class="eyebrow">${esc(S.meta.settings.org_name || 'Risk register')} · ${today}</div>
+        <h1>Risk posture</h1>
+        <div class="lede">${esc(p.blurb)}</div>
+      </div>
+      <div class="meta"><span><b>${open}</b> open risks</span><span><b>${c.risks}</b> total</span><span><b>${c.treatments_done}/${c.treatments_total}</b> treatments done</span><span><b style="color:var(--${av ? (av.ok ? 'ok' : 'bad') : 'text-3'})">${av ? (av.ok ? 'intact' : 'BROKEN') : 'unknown'}</b> audit chain</span></div>
     </div>
-    <div class="split">
-      <div class="card"><h3>What you need to know</h3><ul class="headlines">${d.headlines.map((h) => `<li class="${h.tone}">${esc(h.text)}</li>`).join('')}</ul>
-        <p class="small muted" style="margin-top:8px">Sentences are generated from the numbers by fixed rules, not by an AI model, so they say the same thing every time.</p></div>
-      <div class="card"><h3>Residual heat map <span class="muted small">(after controls, evidence-weighted)</span></h3>${heatmapHTML(d.heatmap.residual)}
-        <p class="small muted" style="margin-top:8px">Click a cell to list its risks. Rows = how likely, columns = how bad.</p></div>
-    </div>
-    <div class="grid g2" style="margin-top:16px">
-      <div class="card"><h3>Top risks</h3><table><tr><th>ID</th><th>Risk</th><th>Owner</th><th>Residual</th><th>P90 loss</th><th>Appetite</th></tr>${rows}</table></div>
-      <div class="card"><h3>Loss exceedance (portfolio)</h3>${d.portfolio ? `<canvas id="lec"></canvas>
-        <div class="stat"><span>Expected annual loss (after controls)</span><b>${money(d.portfolio.residual.ale_mean)}</b></div>
-        <div class="stat"><span>1-in-10 bad year (P90)</span><b>${money(d.portfolio.residual.ale_p90)}</b></div>
-        <div class="stat"><span>Expected loss with no controls</span><b>${money(d.portfolio.inherent.ale_mean)}</b></div>
-        <div class="stat"><span>Value of current control estate / year</span><b>${money(d.portfolio.inherent.ale_mean - d.portfolio.residual.ale_mean)}</b></div>
-        <p class="small muted" style="margin-top:6px">${d.portfolio.risks_quantified} of ${d.portfolio.risks_total} open risks are quantified. Monte Carlo, seeded: re-running gives identical numbers.</p>` : '<p class="muted">No quantified risks yet. Add FAIR inputs to a risk to see this.</p>'}</div>
-    </div>
-    <div class="grid g3" style="margin-top:16px">
-      <div class="card"><h3>Overdue treatment actions (${d.overdue_treatments.length})</h3>${d.overdue_treatments.length ? d.overdue_treatments.map((t) => `<div class="stat"><span><a href="#/risk/${t.risk_id}">${esc(t.title)}</a><br><span class="small muted">${esc(t.owner)} · due ${date(t.due_date)}</span></span><b>${t.progress}%</b></div>`).join('') : '<p class="muted">None</p>'}</div>
-      <div class="card"><h3>Key risk indicators needing attention (${d.kri_alerts.length})</h3>${d.kri_alerts.length ? d.kri_alerts.map((k) => `<div class="stat"><span><a href="#/risk/${k.risk_id}">${esc(k.name)}</a><br><span class="small muted">${k.current_value} ${esc(k.unit)} · warn ${k.warning} · crit ${k.critical}</span></span><span>${sparkline(k.readings, k.warning, k.critical, k.direction)} <span class="chip ${k.status === 'Critical' ? 'bad' : 'warn'}">${k.status}</span></span></div>`).join('') : '<p class="muted">All indicators inside thresholds</p>'}</div>
-      <div class="card"><h3>Reviews, acceptances, evidence</h3>
-        ${d.overdue_reviews.map((r) => `<div class="stat"><span><a href="#/risk/${r.id}">${esc(r.title.slice(0, 60))}</a></span><span class="chip warn">review overdue</span></div>`).join('')}
-        ${d.acceptances.map((a) => `<div class="stat"><span><a href="#/risk/${a.risk_id}">${esc(a.risk_title.slice(0, 60))}</a><br><span class="small muted">accepted by ${esc(a.accepted_by)} until ${date(a.expires_at)}</span></span><span class="chip ${a.expired ? 'bad' : 'info'}">${a.expired ? 'acceptance expired' : 'accepted'}</span></div>`).join('')}
-        <div class="stat" style="margin-top:8px"><span>Control evidence quality</span><span>${tier(1)} ${tiers[1]} &nbsp; ${tier(2)} ${tiers[2]} &nbsp; ${tier(3)} ${tiers[3]}</span></div>
-        <div class="stat"><span>Treatments done</span><b>${c.treatments_done} / ${c.treatments_total}</b></div>
+    <div class="bento">
+      ${statTile(c.breaches, 'Outside appetite', c.breaches ? 'risks above the limits the board set' : 'every open risk is within appetite', c.breaches ? 'bad' : 'ok', 'gauge')}
+      ${statTile(critHigh, 'Critical + High', 'residual, after controls and evidence weighting', (c.bands.Critical || 0) ? 'bad' : critHigh ? 'warn' : 'ok', 'fire')}
+      ${statTile(pf ? money(pf.residual.ale_p90) : '–', 'Bad year loss (P90)', pf ? `expected ${money(pf.residual.ale_mean)} in a typical year` : 'no quantified risks yet', 'accent', 'chart-line-down')}
+      ${statTile(lateCount, 'Late items', `${c.overdue_treatments} overdue actions · ${c.overdue_reviews} stale reviews`, lateCount ? 'warn' : 'ok', 'hourglass-high')}
+
+      <div class="tile c4">
+        <div class="tile-head"><h3>Appetite</h3>${icon('target')}</div>
+        <div class="posture">${postureRing(open - c.breaches, c.breaches)}
+          <div class="legend"><span><span class="dot ok"></span>${open - c.breaches} inside appetite</span><span><span class="dot bad"></span>${c.breaches} outside appetite</span><span class="muted">Checked on residual score and P90 loss, per category.</span></div>
+        </div>
+        <div class="tile-foot">Residual mix across ${open} open risks</div>
+        ${bandBar}
+      </div>
+      <div class="tile c8">
+        <div class="tile-head"><h3>What you need to know</h3>${icon('newspaper')}</div>
+        <ul class="feed">${feed}</ul>
+        <div class="tile-foot">Sentences come from fixed rules over the numbers, not from an AI model, so they read the same every time.</div>
+      </div>
+
+      <div class="tile c7">
+        <div class="tile-head"><h3>Top risks by residual score</h3><a class="small" href="#/risks">All risks ${icon('arrow-right')}</a></div>
+        <table><thead><tr><th>ID</th><th>Risk</th><th>Owner</th><th>Residual</th><th class="right">P90 loss</th><th>Appetite</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>
+      <div class="tile c5">
+        <div class="tile-head"><h3>Residual heat map</h3><span class="small muted">after controls</span></div>
+        ${heatmapHTML(d.heatmap.residual)}
+        <div class="tile-foot">Rows show how likely, columns how bad. Click a cell to list its risks.</div>
+      </div>
+
+      <div class="tile c7">
+        <div class="tile-head"><h3>Loss exceedance, whole portfolio</h3>${icon('chart-line')}</div>
+        ${pf ? `<canvas id="lec" height="220"></canvas>
+        <div class="stat"><span>Expected annual loss after controls</span><b>${money(pf.residual.ale_mean)}</b></div>
+        <div class="stat"><span>One-in-ten bad year (P90)</span><b>${money(pf.residual.ale_p90)}</b></div>
+        <div class="stat"><span>Expected loss with no controls</span><b>${money(pf.inherent.ale_mean)}</b></div>
+        <div class="stat"><span>Value of the control estate per year</span><b class="ok" style="color:var(--ok)">${money(pf.inherent.ale_mean - pf.residual.ale_mean)}</b></div>
+        <div class="tile-foot">${pf.risks_quantified} of ${pf.risks_total} open risks quantified. Seeded Monte Carlo, so re-running gives identical numbers.</div>`
+        : `<div class="empty">${icon('chart-line')}No quantified risks yet. Add FAIR inputs to a risk to see this.</div>`}
+      </div>
+      <div class="tile c5">
+        <div class="tile-head"><h3>Worst score by category</h3>${icon('squares-four')}</div>
+        <div class="cats">${catRows || '<div class="empty">No open risks</div>'}</div>
+        <div class="tile-foot">Control evidence quality across the estate</div>
+        <div class="bandkey">${tier(1)} <span class="num">${tiers[1]}</span> &nbsp; ${tier(2)} <span class="num">${tiers[2]}</span> &nbsp; ${tier(3)} <span class="num">${tiers[3]}</span></div>
+      </div>
+
+      <div class="tile c4">
+        <div class="tile-head"><h3>Overdue treatment actions</h3><span class="num muted">${d.overdue_treatments.length}</span></div>
+        <div class="list">${treat}</div>
+      </div>
+      <div class="tile c4">
+        <div class="tile-head"><h3>Key risk indicators</h3><span class="num muted">${d.kri_alerts.length}</span></div>
+        <div class="list">${kris}</div>
+      </div>
+      <div class="tile c4">
+        <div class="tile-head"><h3>Reviews and acceptances</h3><span class="num muted">${d.overdue_reviews.length + d.acceptances.length}</span></div>
+        <div class="list">${reviews}</div>
       </div>
     </div>`;
-  if (d.portfolio) drawExceedance($('#lec'), [{ label: 'After controls', color: '#1f5eff', curve: d.portfolio.residual.exceedance_curve }, { label: 'No controls', color: '#c62828', curve: d.portfolio.inherent.exceedance_curve }]);
+  if (pf) drawExceedance($('#lec'), [{ label: 'After controls', color: cssVar('--accent'), curve: pf.residual.exceedance_curve }, { label: 'No controls', color: cssVar('--critical'), curve: pf.inherent.exceedance_curve }]);
   document.querySelectorAll('.heat .cell').forEach((el) => el.addEventListener('click', () => { S.filters = { cell: [Number(el.dataset.l), Number(el.dataset.i)] }; location.hash = '#/risks'; }));
 }
 

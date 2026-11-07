@@ -119,7 +119,8 @@ def test_review_updates_cadence(client):
     rid = client.post("/api/risks", json=_risk_payload(review_frequency_days=30), headers=ANALYST).json()["id"]
     r = client.post(f"/api/risks/{rid}/review", json={"note": "checked"}, headers=ANALYST).json()
     assert r["last_reviewed_at"] and not r["review_overdue"]
-    assert r["next_review_at"] == (date.today() + timedelta(days=30)).isoformat()
+    reviewed_on = date.fromisoformat(r["last_reviewed_at"][:10])  # server stamps in UTC; do not compare with local today()
+    assert r["next_review_at"] == (reviewed_on + timedelta(days=30)).isoformat()
 
 
 def test_accept_risk_rules(client):

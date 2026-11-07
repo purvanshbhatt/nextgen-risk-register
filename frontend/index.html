@@ -4,11 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NextGen Risk Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('ngrr.theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#/dashboard"><span class="logo">◈</span> <span>NextGen Risk Register</span> <span class="org" id="orgName"></span></a>
+  <a class="brand" href="#/dashboard"><span class="logo"><i class="ph ph-shield-check"></i></span> <span>NextGen Risk Register</span> <span class="org" id="orgName"></span></a>
   <nav id="nav">
     <a href="#/dashboard" data-route="dashboard">Dashboard</a>
     <a href="#/risks" data-route="risks">Risks</a>
@@ -27,6 +32,7 @@
       <option value="auditor">Auditor</option>
     </select>
     <span class="who" id="whoami"></span>
+    <button class="iconbtn" id="themeBtn" type="button" title="Switch light / dark" aria-label="Switch light or dark theme"><i class="ph ph-sun"></i></button>
   </div>
 </header>
 <main id="view" class="view"><div class="loading">Loading…</div></main>
