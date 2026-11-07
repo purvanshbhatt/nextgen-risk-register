@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "risk-register", "runtimeExecutable": "python3", "runtimeArgs": ["run.py", "--port", "8000"], "port": 8000 }
+  ]
+}

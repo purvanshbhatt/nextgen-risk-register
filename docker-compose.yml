@@ -1,0 +1,9 @@
+services:
+  risk-register:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    # Add "--empty" to start without the Lumen Analytics demo dataset.
+    command: ["python", "run.py", "--host", "0.0.0.0", "--port", "8000"]
